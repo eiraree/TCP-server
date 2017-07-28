@@ -37,11 +37,16 @@ int main () {
 		struct msg * rsp = (struct msg * ) file_info_msg;
 		counter = rsp->data_len;
 
-
 		while (counter > 0) {
-
 			recv_message_c (sock, file_info_msg);
 			rsp = (struct msg * ) file_info_msg;
+			
+			struct msg * request = malloc(sizeof(struct msg));
+			request->type = 4;
+			request->flags = 0;
+			request->data_len = rsp->data_len;
+			send_message (sock, request);
+			free (request);
 			counter -= (rsp->data_len);
 			printf ("COUNTER: %d \n", counter);
 			memset (file_info_msg, 0, BUFF_LEN);

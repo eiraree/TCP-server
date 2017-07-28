@@ -323,6 +323,7 @@ int proc_message_s (int conn_fd, int message_type) {
 	
 		struct msg * file = malloc(sizeof(struct msg) + MAX_SYM);
 		char buff [MAX_SYM] = {0};
+		char req_buff [10] = {0};
 
 		file->type = RSP_DATA;
 		file->flags = 0;
@@ -338,8 +339,16 @@ int proc_message_s (int conn_fd, int message_type) {
 			printf("data length: %d\n", file->data_len); 
 			printf ("data: %s \n \n", file->data);
 			send_message (conn_fd, file);
+			recv_message_s (conn_fd, req_buff);
+
+			struct msg * request = malloc(sizeof(struct msg));
+			request = (struct msg *) req_buff;
+
+			if ((request->type != 5) && (request->data_len != file->data_len))
+				printf ("MEOW! \n");
 			memset (file->data, 0, MAX_SYM);
 			memset (buff, 0, MAX_SYM);
+			
 		}
 
 		free (file);
