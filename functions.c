@@ -9,16 +9,11 @@
 #include <sys/socket.h>
 #include "functions.h"
 
-
 static int create_socket () {
 
 	int sock = -1;
 
-	if ((sock = socket (AF_INET, SOCK_STREAM, 0)) == -1 ) {
-		printf ("%s(), %d: called\n", __func__, __LINE__);
-		printf ("ERROR: %d (%s)!\n", errno, strerror(errno));
-		return -1;
-	}
+	ASSERT((sock = socket (AF_INET, SOCK_STREAM, 0)), -1);
 
 #ifdef DEBUG_INFO
 	printf ("Socket is created.. \n");
@@ -103,21 +98,49 @@ static int connect_socket (int sock, struct info * client) {
 }
 
 
-int send_message (int sock, struct info * client) {
+int create_connection_c (struct info * client) {
+	
+	int sock = -1;
+
+	if ((sock = create_socket ()) != -1)
+		connect_socket(sock, client);
+	
+	return sock;
+}
+
+
+int send_message (int sock, struct msg * msg) {
 
 	int res = 0;
+#if defined SERVER_MODE
+	char * prefix = "[Server]";
+#elif defined CLIENT_MODE
+	char * prefix = "[Client]";
+#else
+#error "Please specify mode (SERVER_MODE/CLIENT_MODE)"
+#endif
 
-	if ( (res = send (sock, (void *) (client->message), strlen (client->message), 0)) != strlen(client->message)) {
-#ifdef DEBUG_INFO
+	if (!msg)
+		return -1;
+
+	printf("%s: Send started\n", prefix);
+	printf("%s: Type: %hhd\n", prefix, msg->type); 
+	printf("%s: Flags: %hhd\n", prefix, msg->flags); 
+	printf("%s: Data length: %d\n", prefix, msg->data_len); 
+	printf("%s: Send complete.\n\n", prefix);
+
+	if ( send (sock, (void *) msg, sizeof(struct msg) + strlen(msg->data), 0) != -1) {
+	#ifdef DEBUG_INFO
 		printf ("-----> \n"); 
 #endif
 	} else if (res == -1) {
-		printf ( "%s(), %d: called\n", __func__, __LINE__);
+		printf ( "%s(), %d: error\n", __func__, __LINE__);
 		printf ("ERROR: %d (%s)!\n", errno, strerror(errno));
 		return -1;
 	}
 	return 0; 
 }
+
 
 			/* SERVER FUNCTIONS */
 
@@ -160,6 +183,19 @@ int listen_socket (int sock) {
 }
 
 
+int create_connection_s (struct sockaddr_in * socket_data) {
+
+	int sock = -1; 
+
+	if ((sock = create_socket ()) != -1) {
+		if (bind_socket (sock, socket_data) != NULL) {
+			listen_socket (sock);
+		}
+	}
+	return sock;
+}
+
+
 int accept_conn (int sock, int conn_fd) {
 	
 
@@ -172,27 +208,88 @@ int accept_conn (int sock, int conn_fd) {
 }
 
 
-int recv_message (int sock, char * buff) {
+int recv_message_s (int socket, char * buff) {
 
-	if (recv (sock, buff, BUFF_LEN, 0) == -1) {
+	if (recv (socket, buff, BUFF_LEN, 0) == -1) {
+		printf ("%s(), %d: error\n", __func__, __LINE__);
+		printf ("ERROR: %d (%s)!\n", errno, strerror(errno));
+		return -1;
+	}
+	struct msg * req = malloc(sizeof(struct msg) + MAX_SYM);
+	req = (struct msg * ) buff;
+
+	printf("[Server]: Received message\n"); 
+	printf("[Server]: Type = %hhd\n", req->type); 
+	printf("[Server]: Flags: %hhd\n", req->flags); 
+	printf("[Server]: Data length: %d\n", req->data_len); 
+	if (req->data_len)
+		printf ("[Server]: Data: %s \n", req->data); 
+	printf ("[Server]: Receive complete\n\n");
+
+	switch (req->type) {
+		case REQ_INFO: 
+			proc_message_s (socket, req->type);
+			break;
+		case REQ_DATA:
+			proc_message_s (socket, req->type);
+			break;
+		default: 
+			return 1;
+	}
+
+	return 0;
+}
+
+
+int recv_message_c (int socket, char * buff) {
+
+	int res = 0;
+	if ((res = recv (socket, buff, BUFF_LEN, 0)) == -1) {
 		printf ("%s(), %d: called\n", __func__, __LINE__);
 		printf ("ERROR: %d (%s)!\n", errno, strerror(errno));
 		return -1;
 	}
 
-	printf ("%s \n", buff);
-	
-	return 0; 
+	printf("debug: received %d\n", res);
+
+	struct msg * req = (struct msg * ) buff;
+
+	printf("[Client]: Received message\n"); 
+	printf("[Client]: Type = %hhd\n", req->type); 
+	printf("[Client]: Flags: %hhd\n", req->flags); 
+	printf("[Client]: Data length: %d\n", req->data_len); 
+	if (req->data_len)
+		printf ("[Client]: Data: %s \n", req->data); 
+	printf ("[Client]: Receive complete\n\n");
+
+/*     printf ("RECV_MESSAGE \n");  */
+/*     printf("type: %hhd\n", req->type);  */
+/*     printf("flags: %hhd\n", req->flags);  */
+/*     printf("data length: %d\n", req->data_len);  */
+/* //	if (req->data_len) */
+		/* printf ("data: %s \n \n", req->data);  */
+
+	switch (req->type) {
+		case RSP_INFO:
+			proc_message_c (socket, req);
+			break; 
+		case RSP_DATA:
+			proc_message_c (socket, req);
+			break;
+	//	default:
+	//		return 1;
+	}
+
+	return 0;
 }
 
 
-int send_file_s (int conn_fd) {
-	
+int proc_message_s (int conn_fd, int message_type) {
+
 	FILE * fd_to_send;
 	long size_of_file = 0;
-	char file_info_msg [24];
-	
-	if ((fd_to_send = fopen ("file.jpg", "r")) == NULL) {
+
+	if ((fd_to_send = fopen ("file.txt", "r")) == NULL) {
 		printf ("%s(), %d: called\n", __func__, __LINE__);
 		printf ("ERROR: %d (%s)!\n", errno, strerror(errno));
 		return -1;
@@ -200,78 +297,95 @@ int send_file_s (int conn_fd) {
 
 	fseek (fd_to_send, 0, SEEK_END);
 	size_of_file = ftell(fd_to_send);
+	rewind (fd_to_send);
+	
+	if (message_type == REQ_INFO) {
 
-	char * buff = (char *) malloc (sizeof(char) * size_of_file);
+		struct msg * file_info = malloc(sizeof(struct msg));
 
-	if (buff == NULL) {
-		printf ("%s(), %d: called\n", __func__, __LINE__);
-		printf ("ERROR: %d (%s)!\n", errno, strerror(errno));
-		return -1;
+		file_info->type = RSP_INFO;
+		file_info->flags = 0;
+		file_info->data_len = size_of_file;
+
+
+		printf ("SERVER, RESP_INFO MESSAGE \n"); 
+		printf("type: %hhd\n", file_info->type); 
+		printf("flags: %hhd\n", file_info->flags); 
+		printf("data length: %d\n", file_info->data_len); 
+		printf ("data: %s \n \n", file_info->data);
+
+
+		send_message (conn_fd, file_info);
+		free (file_info);
 	}
 
-	rewind (fd_to_send);
-	fread (buff, 1, size_of_file, fd_to_send);
+	if (message_type == REQ_DATA) {
+	
+		struct msg * file = malloc(sizeof(struct msg) + MAX_SYM);
+		char buff [MAX_SYM] = {0};
 
-	memset (file_info_msg, 0, 24);
-	sprintf (file_info_msg, "%ld;%s", size_of_file, "file.jpg");
+		file->type = RSP_DATA;
+		file->flags = 0;
+		//file->data_len = MAX_SYM;
 
-	printf ("%s \n", file_info_msg);
+		while (!feof(fd_to_send)) {
+			file->data_len = fread (buff, 1, MAX_SYM, fd_to_send);
+			memcpy (file->data, buff, MAX_SYM);
 
-	if (send (conn_fd, file_info_msg, strlen(file_info_msg), 0) == -1) {
-		printf("%s(), %d: error!\n", __func__, __LINE__);
-		printf ("ERROR: %d (%s)!\n", errno, strerror(errno));
+			printf ("SERVER, RESP_DATA MESSAGE \n"); 
+			printf("type: %hhd\n", file->type); 
+			printf("flags: %hhd\n", file->flags); 
+			printf("data length: %d\n", file->data_len); 
+			printf ("data: %s \n \n", file->data);
+			send_message (conn_fd, file);
+			memset (file->data, 0, MAX_SYM);
+			memset (buff, 0, MAX_SYM);
+		}
+
+		free (file);
 	}
 
 	fclose (fd_to_send);
 
 	return 0;
-
 }
 
+int proc_message_c (int sock, struct msg * msg) {
 
-int create_connection_c (struct info * client) {
-	
-	int sock = -1;
+	printf("%s(), line %d\n", __func__, __LINE__);
 
-	if ((sock = create_socket ()) != -1)
-		connect_socket(sock, client);
-	
-	return sock;
-}
+	if (msg->type == RSP_INFO) {
 
+		struct msg * file_req = malloc (sizeof(struct msg));
+		
+		file_req->type = REQ_DATA;
+		file_req->flags = 0;
+		file_req->data_len = 0;
 
-int create_connection_s (struct sockaddr_in * socket_data) {
+		printf ("CLIENT, REQ_DATA MESSAGE \n"); 
+		printf("type: %hhd\n", file_req->type); 
+		printf("flags: %hhd\n", file_req->flags); 
+		printf("data length: %d\n", file_req->data_len); 
+		printf ("data: %s \n \n", file_req->data);
 
-	int sock = -1; 
+	//	memcpy(file_req->data, msg->data, msg->data_len);
+	//	printf("REQ_DATA: data_len = %d\n", msg->data_len);
+		char * msg_buff = (char *) malloc (sizeof(char) * (msg->data_len));
+		if (msg_buff == NULL) {
+			printf ("ERROR: Memory allocation failed! \n");
+			return 1;
+		} 
 
-	if ((sock = create_socket ()) != -1) {
-		if (bind_socket (sock, socket_data) != NULL) {
-			listen_socket (sock);
-		}
+		send_message (sock, file_req);
+	} 
+
+	if (msg->type == RSP_DATA) {
+		FILE * file_fd;
+		file_fd = fopen ("myfile.txt", "a+");
+		if (file_fd != NULL) {
+			fputs (msg->data, file_fd);
+			fclose (file_fd);
+		} 
 	}
-
-	return sock;
-}
-
-
-int send_message_c (int sock, struct info * client) {
-
-	send_message (sock, client);
-	close_socket(sock);
-
-	return 0;
-}
-
-
-int recv_message_s (int sock, int conn_fd, char * buff) {
-
-	if (buff == NULL) {
-		return -1;
-	} else {
-		recv_message (conn_fd, buff);
-	}
-	close_socket(sock);
-	close_socket(conn_fd);
-
 	return 0;
 }

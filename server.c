@@ -13,11 +13,10 @@ int main () {
 	char buff[BUFF_LEN] = {0};
 	struct sockaddr_in socket_data;
 
-
 	sock = create_connection_s (&socket_data); 
 	if ((conn_fd = accept_conn (sock, conn_fd)) != -1) {
-		recv_message (conn_fd, buff);
-		send_file_s (conn_fd);
+		recv_message_s (conn_fd, buff);
+		recv_message_s (conn_fd, buff);
 	} else {
 		return 1;
 	}
